@@ -110,13 +110,6 @@ COPY test (a0, a1, a2, a3) FROM stdin;
 
 
 --
--- Name: hashindex; Type: INDEX; Schema: public; Owner: postgres; Tablespace: 
---
-
-CREATE INDEX hashindex ON hash USING hash (a);
-
-
---
 -- Name: public; Type: ACL; Schema: -; Owner: postgres
 --
 

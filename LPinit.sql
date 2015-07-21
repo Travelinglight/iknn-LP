@@ -1,6 +1,6 @@
 CREATE EXTENSION hstore;
 
-CREATE FUNCTION LAinit(tb text) RETURNS void
+CREATE FUNCTION LPinit(tb text) RETURNS void
 AS $$
 DECLARE
     nColumn int;    -- the number of columns of the target table
@@ -32,7 +32,7 @@ BEGIN
     EXECUTE format('UPDATE %s SET ibitmap = (%s)', tb, vals);
 
 --  add hash index to the target table
-    EXECUTE format('CREATE INDEX hash_%s ON %s USING HASH (nincomplete);', tb, tb);
+    EXECUTE format('CREATE INDEX hash_%s ON %s USING HASH (ibitmap);', tb, tb);
 
 -- update the _LATMP table;
     FOR vals IN EXECUTE format('SELECT distinct format(''INSERT INTO %s VALUES(%%s, %%s);'', nincomplete::text, quote_nullable(ibitmap)) FROM %s;', tb || '_LATMP', tb) LOOP
@@ -71,12 +71,28 @@ BEGIN
     NEW.ibitmap := bit;
     
 -- update lattice table
-    EXECUTE format(''INSERT INTO %s_latmp SELECT %%s, %%s WHERE NOT EXISTS ( SELECT * FROM hash_latmp WHERE latticeid = %%s and bucketid = %%s);'', nin, quote_nullable(bit), nin, quote_nullable(bit));
+    EXECUTE format(''INSERT INTO %s_latmp SELECT %%s, %%s WHERE NOT EXISTS ( SELECT * FROM %s_latmp WHERE latticeid = %%s and bucketid = %%s);'', nin, quote_nullable(bit), nin, quote_nullable(bit));
     RETURN NEW;
 END
-$T2$ LANGUAGE plpgsql;', tb, tb);
+$T2$ LANGUAGE plpgsql;', tb, tb, tb);
 EXECUTE format('CREATE TRIGGER %s_LAinup BEFORE INSERT OR UPDATE ON %s
 FOR EACH ROW EXECUTE PROCEDURE LP_%s_triInUp();', tb, tb, tb);
+
+EXECUTE format('
+CREATE FUNCTION LP_%s_tridel() RETURNS TRIGGER
+AS $T1$
+DECLARE nexist int;
+BEGIN
+    EXECUTE format(''SELECT count(*) FROM %s WHERE nincomplete = %%s and ibitmap = %%s'', OLD.nincomplete::text, quote_nullable(OLD.ibitmap)) INTO nexist;
+    IF nexist = 0 THEN
+        EXECUTE format(''DELETE FROM %s_latmp WHERE latticeid = %%s and bucketid = %%s;'', OLD.nincomplete::text, quote_nullable(OLD.ibitmap));
+    END IF;
+    RETURN OLD;
+END
+$T1$ LANGUAGE plpgsql;', tb, tb, tb);
+
+EXECUTE format(' CREATE TRIGGER %s_LAdel AFTER DELETE ON %s
+FOR EACH ROW EXECUTE PROCEDURE LP_%s_tridel();', tb, tb, tb);
 
 END
 $$
