@@ -175,13 +175,15 @@ CREATE FUNCTION LP_%s_tridel() RETURNS TRIGGER
 AS $T1$
 DECLARE nexist int;
 BEGIN
+    EXECUTE format(''DELETE FROM lp_%s_%%s WHERE lp_id = %%s'', OLD.ibitmap, OLD.lp_id);
     EXECUTE format(''SELECT count(*) FROM %s WHERE ncomplete = %%s and ibitmap = %%s'', OLD.ncomplete::text, quote_nullable(OLD.ibitmap)) INTO nexist;
     IF nexist = 0 THEN
         EXECUTE format(''DELETE FROM %s_latmp WHERE latticeid = %%s and bucketid = %%s;'', OLD.ncomplete::text, quote_nullable(OLD.ibitmap));
+        EXECUTE format(''DROP TABLE lp_%s_%%s;'', OLD.ibitmap);
     END IF;
     RETURN OLD;
 END
-$T1$ LANGUAGE plpgsql;', tb, tb, tb);
+$T1$ LANGUAGE plpgsql;', tb, tb, tb, tb, tb);
 
 EXECUTE format(' CREATE TRIGGER %s_LAdel AFTER DELETE ON %s
 FOR EACH ROW EXECUTE PROCEDURE LP_%s_tridel();', tb, tb, tb);
