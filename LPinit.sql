@@ -8,8 +8,8 @@ DECLARE
     rec record; -- for looping through selects
     reccol record;  -- for looping through a record
     bktcol text := '';    -- columns of buckets
-    bktins0 text := '';
-    bktins1 text := '';
+    bktinsk text := '';
+    bktinsv text := '';
 BEGIN
 --  get the number of columns of the target table
     EXECUTE format('SELECT COUNT(*) FROM information_schema.columns WHERE table_name=%s;', quote_nullable(tb)) INTO nColumn;
@@ -31,7 +31,7 @@ BEGIN
 
 -- update the alphavalue of the target table
     SELECT string_agg(format('CASE WHEN %s is null THEN 0 ELSE %s END', column_name, column_name), '+') INTO vals FROM information_schema.columns WHERE ((table_name = ''||tb||'') and (column_name != 'alphavalue') and (column_name != 'ncomplete') and (column_name != 'ibitmap') and (column_name != 'lp_id'));
-    vals := format('(%s)::float / (%s - ncomplete)', vals::text, nColumn);
+    vals := format('(%s)::float / ncomplete', vals::text);
     EXECUTE format('UPDATE %s SET alphavalue = (%s)', tb, vals);
 
 -- update the Ibitmap of the target table
@@ -42,8 +42,9 @@ BEGIN
     EXECUTE format('CREATE INDEX hash_%s ON %s USING HASH (ibitmap);', tb, tb);
 
 -- update the _LATMP table;
-    FOR vals IN EXECUTE format('SELECT distinct format(''INSERT INTO %s VALUES(%%s, %%s);'', ncomplete::text, quote_nullable(ibitmap)) FROM %s;', tb || '_LATMP', tb) LOOP
-    EXECUTE vals;
+    FOR vals IN EXECUTE format('SELECT distinct format(''INSERT INTO %s VALUES(%%s, %%s);'', ncomplete::text, quote_nullable(ibitmap)) FROM %s;', tb || '_LATMP', tb)
+    LOOP
+        EXECUTE vals;
     END LOOP;
 
 --  build buckets
@@ -80,26 +81,26 @@ BEGIN
             EXECUTE format('CREATE INDEX ON %s USING BTREE (alphavalue);', 'lp_' || tb || '_' || rec.ibitmap);
         END IF;
 
-        bktins0 := '';
-        bktins1 := '';
+        bktinsk := '';
+        bktinsv := '';
         FOR reccol IN SELECT (each(hstore(rec))).*
         LOOP
             IF reccol.key = 'ibitmap' THEN CONTINUE; END IF;
             IF reccol.key = 'ncomplete' THEN CONTINUE; END IF;
             IF reccol.value is null THEN
             ELSE
-                IF bktins0 = '' THEN
-                    bktins0 = format('INSERT INTO %s(%s', 'lp_' || tb || '_' || rec.ibitmap, reccol.key);
-                    bktins1 = format('VALUES(%s', reccol.value::text);
+                IF bktinsk = '' THEN
+                    bktinsk = format('INSERT INTO %s(%s', 'lp_' || tb || '_' || rec.ibitmap, reccol.key);
+                    bktinsv = format('VALUES(%s', reccol.value::text);
                 ELSE
-                    bktins0 := bktins0 || ', ' || reccol.key;
-                    bktins1 := bktins1 || ', ' || reccol.value::text;
+                    bktinsk := bktinsk || ', ' || reccol.key;
+                    bktinsv := bktinsv || ', ' || reccol.value::text;
                 END IF;
             END IF;
         END LOOP;
-        bktins0 := bktins0 || ')';
-        bktins1 := bktins1 || ')';
-        EXECUTE bktins0 || bktins1;
+        bktinsk := bktinsk || ')';
+        bktinsv := bktinsv || ')';
+        EXECUTE bktinsk || bktinsv;
     END LOOP;
 
 -- create trigger for insertion/updating
@@ -112,6 +113,9 @@ DECLARE
     nco int := 0;
     alp float := 0;
     bit text := '''';
+    vals text := '''';
+    bktinsk text := '''';
+    bktinsv text := '''';
 BEGIN
 -- compute the three additional attributes
     FOR r IN SELECT (each(hstore(NEW))).*
@@ -133,12 +137,36 @@ BEGIN
     NEW.ncomplete := nco;
     NEW.alphavalue := alp;
     NEW.ibitmap := bit;
-    
+
+    EXECUTE format(''SELECT * FROM pg_catalog.pg_tables WHERE tablename = %%s;'', quote_nullable(''lp_%s_'' || NEW.ibitmap)) INTO vals;
+    IF vals = '''' THEN
+        EXECUTE format(''CREATE TABLE %%s(%s);'', ''lp_%s_'' || NEW.ibitmap);
+    END IF;
+
+    FOR r IN SELECT (each(hstore(NEW))).*
+    LOOP
+        IF r.key = ''ibitmap'' THEN CONTINUE; END IF;
+        IF r.key = ''ncomplete'' THEN CONTINUE; END IF;
+        IF r.value is null THEN
+        ELSE
+            IF bktinsk = '''' THEN
+                bktinsk = format(''INSERT INTO %%s(%%s'', ''lp_%s_'' || NEW.ibitmap, r.key);
+                bktinsv = format(''VALUES(%%s'', r.value::text);
+            ELSE
+                bktinsk := bktinsk || '', '' || r.key;
+                bktinsv := bktinsv || '', '' || r.value::text;
+            END IF;
+        END IF;
+    END LOOP;
+    bktinsk := bktinsk || '')'';
+    bktinsv := bktinsv || '')'';
+    EXECUTE bktinsk || bktinsv;
+
 -- update lattice table
     EXECUTE format(''INSERT INTO %s_latmp SELECT %%s, %%s WHERE NOT EXISTS ( SELECT * FROM %s_latmp WHERE latticeid = %%s and bucketid = %%s);'', nin, quote_nullable(bit), nin, quote_nullable(bit));
     RETURN NEW;
 END
-$T2$ LANGUAGE plpgsql;', tb, tb, tb);
+$T2$ LANGUAGE plpgsql;', tb, tb, bktcol, tb, tb, tb, tb);
 EXECUTE format('CREATE TRIGGER %s_LAinup BEFORE INSERT OR UPDATE ON %s
 FOR EACH ROW EXECUTE PROCEDURE LP_%s_triInUp();', tb, tb, tb);
 
