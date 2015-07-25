@@ -7,14 +7,19 @@
 
 PG_MODULE_MAGIC;
 
-PG_FUNCTION_INFO_V1(add_ab);
+PG_FUNCTION_INFO_V1(iknnLP);
+
+void string2int(char *number, int *k);
+void chopQueryFieldNames(char *fieldNames, char **qFnames);
+void chopQueryValues(char *queryValues, int *qValues, int nQueryFields);
+void digestQuery(char *iknnQuery, char *tbl, char **qFnames, int *qValues, int *k, int nQueryFields);
 
 void string2int(char *number, int *k) {
     int i;
     *k = 0;
     for (i = 0; i < strlen(number); i++) {
         if (number[i] >= '0' && number[i] < '9') {
-            k = k * 10 + number[i] - '0';
+            *k = *k * 10 + number[i] - '0';
         }
         else {
             // error handling
@@ -23,85 +28,76 @@ void string2int(char *number, int *k) {
 }
 
 void chopQueryFieldNames(char *fieldNames, char **qFnames) {
-    int nFN = 0;    // number of field names;
     int i, j;
 
-    for (i = 0; i < strlen(fieldNames); i++)
-        if (fieldNames[i] == ',')
-            nFN++;
-    qFnames = (char**)palloc(sizeof(char*) * (++nFN));
-    for (i = 0; i < nFN; i++)
-        qFnames[i] = (char*)palloc(sizeof(char) * 256);
     i = 0;
     while ((fieldNames != NULL) && (strlen(fieldNames) > 0)) {
         for (j = 0; j < strlen(fieldNames); j++) {
-            if (fieldNames[j] == ',') {
-                strcpy(fieldNames, fieldNames + j + 1);
-                qFnames[i][j] = '\0';
-                continue;
-            }
+            if (fieldNames[j] == ',')
+                break;
             qFnames[i][j] = fieldNames[j];
         }
-        qFnames[i][j] = '\0';
-        if (j >= strlen(fidleNames))
+        qFnames[i++][j] = '\0';
+        if (j < strlen(fieldNames) && fieldNames[j] == ',')
+            strcpy(fieldNames, fieldNames + j + 1);
+        else
             break;
     }
 }
 
-void chopQueryValues(char *queryValues, int *qValues) {
+void chopQueryValues(char *queryValues, int *qValues, int nQueryFields) {
     int nQV = 0;    // number of query values
     int i, j;
-    char *number = (char*)palloc(sizeof(char) * 256);
+    char *number = (char*)palloc0(sizeof(char) * 256);
 
-    for (i = 0; i < strlen(queryValues; i++))
+    for (i = 0; i < strlen(queryValues); i++)
         if (queryValues[i] == ',')
             nQV++;
-    qValues = (int*)palloc(sizeof(int) * (++nQV));
     i = 0;
     while ((queryValues != NULL) && (strlen(queryValues) > 0)) {
-        *number = "";
+        memset(number, 0, 256);
         for (j = 0; j < strlen(queryValues); j++) {
-            if (queryValues[j] == ',') {
-                strcpy(queryValues, queryValues + j + 1);
-                number[j] = '\0';
-                string2int(number, qValues + i);
-                continue;
-            }
+            if (queryValues[j] == ',')
+                break;
             number[j] = queryValues[j];
         }
+
         number[j] = '\0';
-        string2int(number, qValues + i);
-        if (j >= strlen(fidleNames))
+        string2int(number, qValues + (i++));
+        if (j < strlen(queryValues) && queryValues[j] == ',')
+            strcpy(queryValues, queryValues + j + 1);
+        else
             break;
     }
 }
 
-void digestQuery(char *iknnQuery, char *tbl, char **qFnames, int *qValues, int *k) {
+void digestQuery(char *iknnQuery, char *tbl, char **qFnames, int *qValues, int *k, int nQueryFields) {
 //    find 3 nearest neighbour of (a, b, c)(1, 2, 3) from hash
-    char *number;;
-    char *tmpQuery = (char*)palloc(strlen(iknnQuery) * sizeof(char));
+    char *number;
+    char *tmpQuery;
     char *fieldNames;
     char *queryValues;
+    tmpQuery = (char*)palloc0(strlen(iknnQuery) * sizeof(char));
 
     // get k
     strcpy(tmpQuery, strchr(iknnQuery, ' ') + 1);
     while (tmpQuery[0] == ' ')
         strcpy(tmpQuery, tmpQuery + 1);
-    number = (char*)palloc((strchr(tmpQuery, ' ') - tmpQuery + 1) * sizeof(char));
-    strncpy(number, tmpQuery, strchr(tmpquery, ' ') - tmpQuery);
+    number = (char*)palloc0((strchr(tmpQuery, ' ') - tmpQuery + 1) * sizeof(char));
+    strncpy(number, tmpQuery, strchr(tmpQuery, ' ') - tmpQuery);
     string2int(number, k);
     
     // get query field names
-    strcpy(tmpQuery, strchr(tmpquery, '(') + 1);
-    fieldNames = (char*)palloc((strchr(tmpQuery, ')') - tmpQuery + 1) * sizeof(char));
+    strcpy(tmpQuery, strchr(tmpQuery, '(') + 1);
+    fieldNames = (char*)palloc0((strchr(tmpQuery, ')') - tmpQuery + 1) * sizeof(char));
     strncpy(fieldNames, tmpQuery, strchr(tmpQuery, ')') - tmpQuery);
     chopQueryFieldNames(fieldNames, qFnames);
 
     // get query values
     strcpy(tmpQuery, strchr(tmpQuery, '(') + 1);
-    queryValues = (char*)palloc((strchr(tmpQuery, ')') - tmpQuery + 1) * sizeof(char));
+    queryValues = (char*)palloc0((strchr(tmpQuery, ')') - tmpQuery + 1) * sizeof(char));
     strncpy(queryValues, tmpQuery, strchr(tmpQuery, ')') - tmpQuery);
-    chopQueryValues(queryValues, qValues);
+    chopQueryValues(queryValues, qValues, nQueryFields);
 
     // get table name
     strcpy(tmpQuery, strstr(tmpQuery, "from ") + 5);
@@ -110,8 +106,7 @@ void digestQuery(char *iknnQuery, char *tbl, char **qFnames, int *qValues, int *
     while (tmpQuery[strlen(tmpQuery) - 1] == ' ')
         strncpy(tmpQuery, tmpQuery, strlen(tmpQuery) - 1);
     tmpQuery[strlen(tmpQuery)] = '\0';
-    tbl = (char*)palloc(sizeof(char) * strlen(tmpQuery) + 1);
-    *tbl = tmpQuery;
+    strcpy(tbl, tmpQuery);
 }
 
 Datum
@@ -120,13 +115,22 @@ iknnLP(PG_FUNCTION_ARGS) {
     char *tbl;
     char **qFnames;
     int *qValues;
-    int k;
+    int nQueryFields = 0;
+    int k, i;
     int ret;
-    int proc;
+    int proc = 0;
 
     /* get arguments, convert command to C string */
     iknnQuery = text_to_cstring(PG_GETARG_TEXT_P(0));
-    digestQuery(iknnQuery, tbl, qFnames, qValues, &k);
+    for (i = strchr(iknnQuery, '(') - iknnQuery + 1; i < strchr(iknnQuery, ')') - iknnQuery - 1; i++)
+        if (iknnQuery[i] == ',')
+            nQueryFields++;
+    qFnames = (char**)palloc(sizeof(char*) * (++nQueryFields));
+    qValues = (int*)palloc(sizeof(int) * nQueryFields);
+    for (i = 0; i < nQueryFields; i++)
+        qFnames[i] = (char*)palloc(sizeof(char) * 256);
+    tbl = (char*)palloc(sizeof(char) * 256);
+    digestQuery(iknnQuery, tbl, qFnames, qValues, &k, nQueryFields);
 
     /* open internal connection */
     SPI_connect();
@@ -141,9 +145,8 @@ iknnLP(PG_FUNCTION_ARGS) {
             HeapTuple tuple = tuptable->vals[j];
             // construct a string representing the tuple
             for (i = 1, buf[0] = 0; i <= tupdesc->natts; i++)
-                snprintf(buf + strlen (buf),
-                    sizeof(buf) - strlen(buf), "%s(%s::%s)%s", SPI_fname(tupdesc, i), SPI_getvalue(tuple, tupdesc, i), SPI_gettype(tupdesc, i),(i == tupdesc->natts) ? " " : " |");
-                    ereport(INFO, (errmsg("ROW: %s", buf)));
+                snprintf(buf + strlen (buf), sizeof(buf) - strlen(buf), "%s(%s::%s)%s", SPI_fname(tupdesc, i), SPI_getvalue(tuple, tupdesc, i), SPI_gettype(tupdesc, i),(i == tupdesc->natts) ? " " : " |");
+            ereport(INFO, (errmsg("ROW: %s", buf)));
         }
     }
     SPI_finish(); //pfree(command);
