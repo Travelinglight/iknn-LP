@@ -26,6 +26,7 @@ typedef struct {
     long length;
 }Heap;
 
+double fabs(double n);
 double string2double(char *number);
 void string2int(char *number, int *k);
 void chopQueryFieldNames(char *fieldNames, char **qFnames);
@@ -35,17 +36,24 @@ void heapInsert(Heap *heap, HeapRec newRec);
 void heapCover(Heap *heap, long node, HeapRec newRec);
 int binarySearch(TupleDesc *tupdescObj, SPITupleTable *tuptableObj, long procObj, double qAlpha, int dim);
 
+double fabs(double n) {
+    return n < 0 ? -n : n;
+}
+
 double string2double(char *number) {
     int i, flag = 1;    // flag=1 before point, flag=0 after point
-    long div10 = 1;
+    long div10 = 1, sign = 1;
     double k = 0;
     for (i = 0; i < strlen(number); i++) {
-        if (number[i] == '.') {
-            flag = 1;
+        if (i == 0 && number[i] == '-') {
+            sign = -1;
+        }
+        else if (number[i] == '.') {
+            flag = 0;
             div10 *= 10;
         }
-        else if (number[i] >= '0' && number[i] < '9') {
-            k = k * (flag > 0 ? 10 : 1) + (number[i] - '0') / (flag > 0 ? 1 : div10);
+        else if (number[i] >= '0' && number[i] <= '9') {
+            k = k * (flag > 0 ? 10 : 1) + (float)(number[i] - '0') / (flag > 0 ? 1 : div10);
             if (flag == 0)
                 div10 *= 10;
         }
@@ -53,20 +61,24 @@ double string2double(char *number) {
             // error handling
         }
     }
-    return k;
+    return k * sign;
 }
 
 void string2int(char *number, int *k) {
-    int i;
+    int i, sign = 1;
     *k = 0;
     for (i = 0; i < strlen(number); i++) {
-        if (number[i] >= '0' && number[i] < '9') {
+        if (i == 0 && number[i] == '-') {
+            sign = -1;
+        }
+        else if (number[i] >= '0' && number[i] < '9') {
             *k = *k * 10 + number[i] - '0';
         }
         else {
             // error handling
         }
     }
+    *k = *k * sign;
 }
 
 void chopQueryFieldNames(char *fieldNames, char **qFnames) {
@@ -186,23 +198,30 @@ void heapCover(Heap *heap, long node, HeapRec newRec) {
 
 int binarySearch(TupleDesc *tupdescObj, SPITupleTable *tuptableObj, long procObj, double qAlpha, int dim) {
     long l = 0, r = procObj - 1;
+    ereport(INFO, (errmsg("qAlpha: %lf", qAlpha)));
     while (l <= r) {
         long mid = (l + r) >> 1;
+        ereport(INFO, (errmsg("l: %ld, r: %ld, mid: %ld, midvalue: %lf", l, r, mid, string2double(SPI_getvalue(tuptableObj->vals[mid], *tupdescObj, dim + 2)))));
         if (string2double(SPI_getvalue(tuptableObj->vals[mid], *tupdescObj, dim + 2)) > qAlpha) {
             r = mid - 1;
             continue;
         }
-        else if (string2double(SPI_getvalue(tuptableObj->vals[mid], *tupdescObj, dim + 2)) > qAlpha) {
+        else if (string2double(SPI_getvalue(tuptableObj->vals[mid], *tupdescObj, dim + 2)) < qAlpha) {
             l = mid + 1;
             continue;
         }
         else
             return mid;
     }
+    ereport(INFO, (errmsg("l: %ld, r: %ld", l, r)));
     if (r == -1)
         return 0;
     if (l == procObj)
         return procObj - 1;
+    while ((l < procObj - 1) && (fabs(string2double(SPI_getvalue(tuptableObj->vals[l], *tupdescObj, dim + 2)) - qAlpha) > fabs(string2double(SPI_getvalue(tuptableObj->vals[l + 1], *tupdescObj, dim + 2)) - qAlpha)))
+        l++;
+    while ((l > 0) && (fabs(string2double(SPI_getvalue(tuptableObj->vals[l], *tupdescObj, dim + 2)) - qAlpha) > fabs(string2double(SPI_getvalue(tuptableObj->vals[l - 1], *tupdescObj, dim + 2)) - qAlpha)))
+        l--;
     return l;
 }
 
@@ -329,8 +348,10 @@ iknnLP(PG_FUNCTION_ARGS) {
                 TupleDesc tupdescObj = SPI_tuptable->tupdesc;
                 SPITupleTable *tuptableObj = SPI_tuptable;
                 qAlpha /= Iseto;
+                ereport(INFO, (errmsg("=================%s===========binarySearch", bitmap)));
                 qPos = binarySearch(&tupdescObj, tuptableObj, procObj, qAlpha, dim);
-                ereport(INFO, (errmsg("qPos: %ld", qPos)));
+                ereport(INFO, (errmsg("qAlpha: %lf", qAlpha)));
+                ereport(INFO, (errmsg("qPos_%s: %ld", bitmap, qPos)));
             }
         }
     }
