@@ -1,9 +1,10 @@
 CREATE EXTENSION hstore;
 
-CREATE FUNCTION LPinit(tb text) RETURNS void
+CREATE OR REPLACE FUNCTION LPinit(tb text) RETURNS void
 AS $$
 DECLARE
     nColumn int;    -- the number of columns of the target table
+    ext int;    -- to judge if exist
     vals text;  -- temp use
     rec record; -- for looping through selects
     reccol record;  -- for looping through a record
@@ -74,11 +75,10 @@ BEGIN
     -- start to build and update buckets
     FOR rec IN EXECUTE format('SELECT * FROM %s', tb)
     LOOP
-        EXECUTE format('SELECT * FROM pg_catalog.pg_tables WHERE tablename = %s;', quote_nullable('lp_' || tb || '_' || rec.ibitmap)) INTO vals;
-        IF vals THEN
-        ELSE
-            EXECUTE format('CREATE TABLE %s(%s);', 'lp_' || tb || '_' || rec.ibitmap, bktcol);
-            EXECUTE format('CREATE INDEX ON %s USING BTREE (alphavalue);', 'lp_' || tb || '_' || rec.ibitmap);
+        EXECUTE format('CREATE TABLE IF NOT EXISTS %s(%s);', 'lp_' || tb || '_' || rec.ibitmap, bktcol);
+        EXECUTE format('SELECT count(*) FROM pg_indexes WHERE tablename = %s and indexname = %s;', quote_nullable('lp_' || tb || '_' || rec.ibitmap), quote_nullable('sort_' || tb || '_' || rec.ibitmap)) INTO ext;
+        IF ext = 0 THEN
+            EXECUTE format('CREATE INDEX sort_%s_%s ON %s USING BTREE (alphavalue);', tb, rec.ibitmap, 'lp_' || tb || '_' || rec.ibitmap);
         END IF;
 
         bktinsk := '';
@@ -109,6 +109,7 @@ CREATE FUNCTION LP_%s_triInUp() RETURNS TRIGGER
 AS $T2$
 DECLARE
     r record;
+    ext int;
     nin int := 0;
     nco int := 0;
     alp float := 0;
@@ -138,9 +139,11 @@ BEGIN
     NEW.alphavalue := alp;
     NEW.ibitmap := bit;
 
-    EXECUTE format(''SELECT * FROM pg_catalog.pg_tables WHERE tablename = %%s;'', quote_nullable(''lp_%s_'' || NEW.ibitmap)) INTO vals;
-    IF vals = '''' THEN
-        EXECUTE format(''CREATE TABLE %%s(%s);'', ''lp_%s_'' || NEW.ibitmap);
+    EXECUTE format(''CREATE TABLE IF NOT EXISTS %%s(%s);'', ''lp_%s_'' || NEW.ibitmap);
+ 
+    EXECUTE format(''SELECT count(*) FROM pg_indexes WHERE tablename = %%s and indexname = %%s;'', quote_nullable(''lp_%s_'' || NEW.ibitmap), quote_nullable(''sort_%s_'' || NEW.ibitmap)) INTO ext;
+    IF ext = 0 THEN
+        EXECUTE format(''CREATE INDEX %%s ON %%s USING BTREE (alphavalue);'', ''sort_%s_'' || NEW.ibitmap, ''lp_%s_'' || NEW.ibitmap);
     END IF;
 
     FOR r IN SELECT (each(hstore(NEW))).*
@@ -166,7 +169,7 @@ BEGIN
     EXECUTE format(''INSERT INTO %s_latmp SELECT %%s, %%s WHERE NOT EXISTS ( SELECT * FROM %s_latmp WHERE latticeid = %%s and bucketid = %%s);'', nin, quote_nullable(bit), nin, quote_nullable(bit));
     RETURN NEW;
 END
-$T2$ LANGUAGE plpgsql;', tb, tb, bktcol, tb, tb, tb, tb);
+$T2$ LANGUAGE plpgsql;', tb, bktcol, tb,  tb, tb, tb, tb, tb, tb, tb, tb);
 EXECUTE format('CREATE TRIGGER %s_LAinup BEFORE INSERT OR UPDATE ON %s
 FOR EACH ROW EXECUTE PROCEDURE LP_%s_triInUp();', tb, tb, tb);
 
