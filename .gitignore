@@ -1,4 +1,4 @@
 *.o
 *.so
-*.sql
+c/*.sql
 test/
