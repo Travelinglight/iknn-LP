@@ -1,24 +1,69 @@
 # iknn
 incomplete k nearest neighbor query in postgresql
 
+## Algorithm Discription
+### LP algorithm:
+  Please see Mr. Gao's paper: <i><b>IkNN-TFS-Yunjun Gao-20150115</b></i>
+### Initialization:
+  1. Set an extra table to record lattice-bucket relations. Each Lattice is identified by ncomplete, the number of completed fields of all the objects in it. Each bucket is identified by a bitmap, representing the incomplete state of objects in it. e.g. '1010' represents the 2nd and 4th field of the object is incomplete.
+  2. Categorize all objects into buckets. Build a table for each bucket, storing the whole tuple and an extra column for alphavalue. A BTREE index is built on each bucket at the column alphavalue.
+
+### Query
+  1. Fetch all bitmaps from lattice-bucket table, order by latticeid (ncomplete);
+  2. For each bitmap, fetch all tuples in the corresponding buckets, order by alphavalue. Notice that a BTREE index has been built at the column alphavalue, postgres fetches tuple directly from Btree and doesn't need to sort them. The order by clause thus does not cause extra complexity;
+  3. Calculate the qAlpha according to the bitmap, and binary search its position in the fetched tuples;
+  4. Search forward and backward with alpha value pruning and partial distance pruning (mentioned in the paper), while maintain a max-heap as the candidate set;
+  5. return all the tuples remained in the candidate set.
+
 ## How to use?
-### 1. Import LPinit.sql
+### 1. Clone and enter my repo (in terminal)
+~~~
+    git clone git@github.com:Travelinglight/iknn.git
+    cd iknn
+~~~
+
+### 2. Import LPinit.sql (in postgresql)
 
 ~~~
-    \i LAinit.sql
+    \i pgsql/LAinit.sql
 ~~~
 
-### 2. Initialize a target table to support iknn query
+### 3. Initialize a target table to support iknn query
 
 ~~~
     select lpinit([table name]);
 ~~~
 This function automatically does these things:
+
   1. create a tmp table as lattices. The name of tmp table is [table name]_latmp;
-  2. add three columns to the original table: alphavalue, nincomplete and ibitmap, recording the alpha value of the entry, the number of incomplete values and the bitmap of completeness respectively;
-  3. build up hash index on ibitmap, that is for buckets;
+  2. add four columns to the original table: lp_id, alphavalue, nincomplete and ibitmap, recording the unique id for lp algorithm, alpha value of the entry, the number of incomplete values and the bitmap of completeness respectively;
+  3. build up hash index on ibitmap, that is for buckets deletion;
   4. build up hash index on latticeid of the tmp table, to speed up query for buckets;
-  5. set triggers to maintain the three columns and the extra tmp table on insert, update and delete.
+  5. create table for each bitmap, representing buckets, with the name lp\_[table name]\_[bitmap].
+  6. build up b-tree index on lp\_[table name]\_[bitmap] at column alphavalue, to auto-sort the tuples with alphavalue
+  7. set triggers to maintain the three columns and the extra tables on insert, update and delete.
+
+### 4. Make and install iknnLP function (in terminal)
+~~~
+	cd c
+	make
+	sudo make install
+	cd ..
+~~~
+
+### 5. Import iknnLP function (in postgresql)
+~~~
+	\i c/iknnLP.sql
+~~~
+
+### 6. Performing iknn query with LP althrothm
+~~~
+	select iknnLP('find 3 nearest neighbour of (a0,a1,a2,a3)(31,32,33,34) from test');
+~~~
+* a0,a1,a2,a3 are columns in the table _test_.
+* 31,32,33,34 are values of the columns respectively.
+* the query object must have values for all columns of the query table
+* The tuples returned are those considered nearest with the query object.
 
 ### 3. Inport LPwithdraw.sql
 
@@ -34,7 +79,7 @@ This function automatically does these things:
 
 This function automatically does these things:
   1. drop the extra three columns of the original table;
-  2. drop the tmp table;
+  2. drop all tmp tables;
   3. drop the two triggers that maintains the three columns and the tmp table;
   4. drop the lpinit function
 
@@ -54,3 +99,11 @@ This function automatically does these things:
 
 ### lpinit function doesn't exist after withdraw
   In the withdraw function I dropped the lpinit function. this is convenient for me because this project is not yet finished and I need to update lpinit function frequently. All you have to do is to re-import the LPinit module.
+
+## To-do list
+1. improve input, to allow spaces
+2. improve output, to print tuples like a table
+
+## Contact us
+1. You can get the paper from Mr. Gao: gaoyj@zju.edu.cn
+2. The projet is coded by Kingston Chen, feel free to ask any questions: holaelmundokingston@gmail.com
