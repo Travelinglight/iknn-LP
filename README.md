@@ -17,23 +17,32 @@ incomplete k nearest neighbor query in postgresql
 
 ## How to use?
 ### 1. Clone and enter my repo (in terminal)
-~~~
+~~~terminal
     git clone git@github.com:Travelinglight/iknn.git
     cd iknn
 ~~~
 
 ### 2. Import LPinit.sql (in postgresql)
 
-~~~
+~~~sql
     \i pgsql/LAinit.sql
 ~~~
 
 ### 3. Initialize a target table to support iknn query
+You may want to use the sample table "test". Import the table before you initialize it:
 
+~~~sql
+	CREATE DATABASE iknn;
+	\i iknn.sql
 ~~~
-    select lpinit([table name]);
+
+Now initialize the "test" table
+
+~~~sql
+    select lpinit('test');
 ~~~
-This function automatically does these things:
+
+The lpinit function automatically does these things:
 
   1. create a tmp table as lattices. The name of tmp table is [table name]_latmp;
   2. add four columns to the original table: lp_id, alphavalue, nincomplete and ibitmap, recording the unique id for lp algorithm, alpha value of the entry, the number of incomplete values and the bitmap of completeness respectively;
@@ -44,7 +53,7 @@ This function automatically does these things:
   7. set triggers to maintain the three columns and the extra tables on insert, update and delete.
 
 ### 4. Make and install iknnLP function (in terminal)
-~~~
+~~~terminal
 	cd c
 	make
 	sudo make install
@@ -52,26 +61,31 @@ This function automatically does these things:
 ~~~
 
 ### 5. Import iknnLP function (in postgresql)
-~~~
+~~~sql
 	\i c/iknnLP.sql
 ~~~
 
 ### 6. Performing iknn query with LP althrothm
-~~~
-	select iknnLP('find 3 nearest neighbour of (a0,a1,a2,a3)(31,32,33,34) from test');
+~~~sql
+	select a, b, c, d, distance from iknnLP('find 3 nearest neighbour of (a0,a1,a2,a3)(31,32,33,34) from test') AS (a int, b int, c int, d int, distance float);
 ~~~
 * a0,a1,a2,a3 are columns in the table _test_.
 * 31,32,33,34 are values of the columns respectively.
 * the query object must have values for all columns of the query table
 * The tuples returned are those considered nearest with the query object.
 
-### 3. Inport LPwithdraw.sql
+### 7. Here's the result
+~~~sql
+ a | b  | c | d  | distance ---+----+---+----+----------   |    |   | 46 |      576   |    |   | 23 |      484   | 17 |   | 35 |      452(3 rows)
+~~~
+
+### 8. Inport LPwithdraw.sql
 
 ~~~
     \i LPwithdraw.sql
 ~~~
 
-### 4. Withdraw iknn query support
+### 9. Withdraw iknn query support
 
 ~~~
     select lpwithdraw([table name]);
@@ -102,7 +116,6 @@ This function automatically does these things:
 
 ## To-do list
 1. improve input, to allow spaces
-2. improve output, to print tuples like a table
 
 ## Contact us
 1. You can get the paper from Mr. Gao: gaoyj@zju.edu.cn
