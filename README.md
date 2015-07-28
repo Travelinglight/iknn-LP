@@ -15,6 +15,11 @@ incomplete k nearest neighbor query in postgresql
   4. Search forward and backward with alpha value pruning and partial distance pruning (mentioned in the paper), while maintain a max-heap as the candidate set;
   5. return all the tuples remained in the candidate set.
 
+## Testing Environment
+  1. Device: Macbook Pro 2015
+  2. OS: ubuntu gnome 14.04
+  3. PostgreSQL version: PostgreSQL 9.4
+
 ## How to use?
 ### 1. Clone and enter my repo (in terminal)
 ~~~terminal
@@ -114,8 +119,8 @@ This function automatically does these things:
 ### lpinit function doesn't exist after withdraw
   In the withdraw function I dropped the lpinit function. this is convenient for me because this project is not yet finished and I need to update lpinit function frequently. All you have to do is to re-import the LPinit module.
 
-## To-do list
-1. improve input, to allow spaces
+### To-do List
+1. to support float as data type
 
 ## Contact us
 1. You can get the paper from Mr. Gao: gaoyj@zju.edu.cn

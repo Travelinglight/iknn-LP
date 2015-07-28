@@ -90,7 +90,7 @@ void string2int(char *number, int *K) {
 // chop query field names into a string array
 void chopQueryFieldNames(char *fieldNames, char **qFnames) {
     int i, j;
-
+ereport(INFO, (errmsg("fieldNames:%s", fieldNames)));
     i = 0;
     while ((fieldNames != NULL) && (strlen(fieldNames) > 0)) {
         for (j = 0; j < strlen(fieldNames); j++) {
@@ -99,6 +99,10 @@ void chopQueryFieldNames(char *fieldNames, char **qFnames) {
             qFnames[i][j] = fieldNames[j];
         }
         qFnames[i++][j] = '\0';
+        while (qFnames[i - 1][0] == ' ')
+            strcpy(qFnames[i - 1], qFnames[i - 1] + 1);
+        while (qFnames[i - 1][strlen(qFnames[i - 1]) - 1] == ' ')
+            strncpy(qFnames[i - 1], qFnames[i - 1], strlen(qFnames[i - 1]) - 1);
         if (j < strlen(fieldNames) && fieldNames[j] == ',')
             strcpy(fieldNames, fieldNames + j + 1);
         else
@@ -126,6 +130,11 @@ void chopQueryValues(char *queryValues, int *qValues, int nQueryFields) {
         }
 
         number[j] = '\0';
+        while (number[0] == ' ')
+            strcpy(number, number + 1);
+        while (number[strlen(number) - 1] == ' ')
+            strncpy(number, number, strlen(number) - 1);
+
         string2int(number, qValues + (i++));
         if (j < strlen(queryValues) && queryValues[j] == ',')
             strcpy(queryValues, queryValues + j + 1);
