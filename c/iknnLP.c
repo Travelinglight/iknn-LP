@@ -4,7 +4,7 @@
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "funcapi.h"
-
+ 
 PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(iknnLP);
@@ -27,13 +27,8 @@ typedef struct {
     long length;
 }Heap;
 
-/*typedef struct {
-    int *data;
-    double dist;
-}retdata;*/
-
-int dim;
-Heap res;
+int dim;    // dimension
+Heap res;   // result
 
 double fabs(double n);
 double string2double(char *number);
@@ -43,7 +38,7 @@ void chopQueryValues(char *queryValues, int *qValues, int nQueryFields);
 void digestQuery(char *iknnQuery, char *tbl, char **qFnames, int *qValues, int *K, int nQueryFields);
 void heapInsert(Heap *heap, double dist, SPITupleTable *tuptable, long pt, TupleDesc *tupdesc, char *bitmap);
 void heapCover(Heap *heap, long node, double dist, SPITupleTable *tuptable, long pt, TupleDesc *tupdesc, char *bitmap);
-int binarySearch(TupleDesc *tupdescObj, SPITupleTable *tuptableObj, long procObj, double qAlpha, int dim);
+int binarySearch(TupleDesc *tupdesc, SPITupleTable *tuptable, long procObj, double qAlpha, int dim);
 double calcDist(TupleDesc *tupdesc, SPITupleTable *tuptable, long pt, queryObj *qObj, int dim, int Iseto, char* bitmap, double tao);
 void extractVals(SPITupleTable *tuptable, long pt, TupleDesc *tupdesc, HeapRec *rec, char *bitmap);
 
@@ -92,6 +87,7 @@ void string2int(char *number, int *K) {
     *K = *K * sign;
 }
 
+// chop query field names into a string array
 void chopQueryFieldNames(char *fieldNames, char **qFnames) {
     int i, j;
 
@@ -110,6 +106,7 @@ void chopQueryFieldNames(char *fieldNames, char **qFnames) {
     }
 }
 
+// chop query values into an int array
 void chopQueryValues(char *queryValues, int *qValues, int nQueryFields) {
     int nQV = 0;    // number of query values
     int i, j;
@@ -179,12 +176,11 @@ void heapInsert(Heap *heap, double dist, SPITupleTable *tuptable, long pt, Tuple
     long p, f;
     HeapRec tmpRec;
 
-    tmpRec.vals = (int*)palloc0(sizeof(int) * dim);
-    tmpRec.isnull = (char*)palloc0(sizeof(char) * dim);
-
+    // insert a new object
     heap->rec[++heap->length].dist = dist;
     extractVals(tuptable, pt, tupdesc, &heap->rec[heap->length], bitmap); 
 
+    // percolate up
     p = heap->length;
     while ((p >> 1) > 0) {
         f = p >> 1;
@@ -201,12 +197,11 @@ void heapCover(Heap *heap, long node, double dist, SPITupleTable *tuptable, long
     long p = 1, s;
     HeapRec tmpRec;
 
-    tmpRec.vals = (int*)palloc0(sizeof(int) * dim);
-    tmpRec.isnull = (char*)palloc0(sizeof(char) * dim);
-
+    // cover the top object
     heap->rec[1].dist = dist;
     extractVals(tuptable, pt, tupdesc, &heap->rec[1], bitmap);
 
+    // percolate down
     while ((p << 1) <= heap->length) {
         s = p << 1;
         if ((s < heap->length) && (heap->rec[s].dist < heap->rec[s+1].dist))
@@ -220,28 +215,31 @@ void heapCover(Heap *heap, long node, double dist, SPITupleTable *tuptable, long
     }
 }
 
-int binarySearch(TupleDesc *tupdescObj, SPITupleTable *tuptableObj, long procObj, double qAlpha, int dim) {
+int binarySearch(TupleDesc *tupdesc, SPITupleTable *tuptable, long procObj, double qAlpha, int dim) {
     long l = 0, r = procObj - 1;
     while (l <= r) {
         long mid = (l + r) >> 1;
-        if (string2double(SPI_getvalue(tuptableObj->vals[mid], *tupdescObj, dim + 2)) > qAlpha) {
+        if (string2double(SPI_getvalue(tuptable->vals[mid], *tupdesc, dim + 2)) > qAlpha) {
             r = mid - 1;
             continue;
         }
-        else if (string2double(SPI_getvalue(tuptableObj->vals[mid], *tupdescObj, dim + 2)) < qAlpha) {
+        else if (string2double(SPI_getvalue(tuptable->vals[mid], *tupdesc, dim + 2)) < qAlpha) {
             l = mid + 1;
             continue;
         }
         else
             return mid;
     }
+
     if (r == -1)
         return 0;
     if (l == procObj)
         return procObj - 1;
-    while ((l < procObj - 1) && (fabs(string2double(SPI_getvalue(tuptableObj->vals[l], *tupdescObj, dim + 2)) - qAlpha) > fabs(string2double(SPI_getvalue(tuptableObj->vals[l + 1], *tupdescObj, dim + 2)) - qAlpha)))
+
+    // adjust to the nearst object to the query object
+    while ((l < procObj - 1) && (fabs(string2double(SPI_getvalue(tuptable->vals[l], *tupdesc, dim + 2)) - qAlpha) > fabs(string2double(SPI_getvalue(tuptable->vals[l + 1], *tupdesc, dim + 2)) - qAlpha)))
         l++;
-    while ((l > 0) && (fabs(string2double(SPI_getvalue(tuptableObj->vals[l], *tupdescObj, dim + 2)) - qAlpha) > fabs(string2double(SPI_getvalue(tuptableObj->vals[l - 1], *tupdescObj, dim + 2)) - qAlpha)))
+    while ((l > 0) && (fabs(string2double(SPI_getvalue(tuptable->vals[l], *tupdesc, dim + 2)) - qAlpha) > fabs(string2double(SPI_getvalue(tuptable->vals[l - 1], *tupdesc, dim + 2)) - qAlpha)))
         l--;
     return l;
 }
@@ -259,13 +257,14 @@ double calcDist(TupleDesc *tupdesc, SPITupleTable *tuptable, long pt, queryObj *
         if (bitmap[i - 1] == '1') {
             dif = string2double(SPI_getvalue(tuple, *tupdesc, i)) - qObj[i - 1].value;
             sum += dif * dif;
-            if ((tao >= 0) && (sum > tmp))
-                return -1;
+            if ((tao >= 0) && (sum > tmp))  // partial distance pruning
+                return -1;  // return -1 means the object should not be added into candidate set
         }
     }
     return sum * dim / Iseto;
 }
 
+// extract values from tuple to array
 void extractVals(SPITupleTable *tuptable, long pt, TupleDesc *tupdesc, HeapRec *rec, char *bitmap) {
     int i;
     HeapTuple tuple = tuptable->vals[pt];
@@ -281,8 +280,7 @@ iknnLP(PG_FUNCTION_ARGS) {
     char *iknnQuery;
     char *tbl;
     char getBuckets[1024], getFields[1024], getObjects[1024];
-    char getOutFields[65536] = "select ";
-    char **qFnames;
+    char **qFnames; // query field names
     int *qValues;
     int nQueryFields = 0;
     int K, i, j;  // dim: dimention
@@ -295,17 +293,19 @@ iknnLP(PG_FUNCTION_ARGS) {
     int max_calls;
     AttInMetadata *attinmeta;
     FuncCallContext *funcctx;
-    TupleDesc tupdescOut, tupdescHeap;
+    TupleDesc tupdesc;
 
     if (SRF_IS_FIRSTCALL()) {
         MemoryContext oldcontext;
-        /* create a function context for cross-call persistence */
+        // create a function context for cross-call persistence
         funcctx = SRF_FIRSTCALL_INIT();
-        /* switch to memory context appropriate for multiple function calls */
+        // switch to memory context appropriate for multiple function calls
         oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
-        /* get arguments, convert command to C string */
+        // get arguments, convert command to C string
         iknnQuery = text_to_cstring(PG_GETARG_TEXT_P(0));
+        
+        // find out the number of complete fields 
         for (i = strchr(iknnQuery, '(') - iknnQuery + 1; i < strchr(iknnQuery, ')') - iknnQuery - 1; i++)
             if (iknnQuery[i] == ',')
                 nQueryFields++;
@@ -316,7 +316,7 @@ iknnLP(PG_FUNCTION_ARGS) {
         tbl = (char*)palloc0(sizeof(char) * 256);
         digestQuery(iknnQuery, tbl, qFnames, qValues, &K, nQueryFields);
         
-        /* initialize heap */
+        // initialize heap: first step
         res.size = 1;
         while (res.size < K + 1)
             res.size <<= 1;
@@ -340,29 +340,28 @@ iknnLP(PG_FUNCTION_ARGS) {
             SPITupleTable *tuptable = SPI_tuptable;            
     
             dim = procFld - 4;
+            // initialize query Object
             qObj = (queryObj*)palloc0(sizeof(queryObj) * dim);
             for (i = 0; i < dim; i++)
                 qObj[i].fieldName = (char*)palloc0(sizeof(char) * 256);
+            // initialize heap: second step
             for (i = 0; i < res.size; i++) {
                 res.rec[i].vals = (int*)palloc0(sizeof(int) * dim);
                 res.rec[i].isnull = (char*)palloc(sizeof(char) * dim);
             }
 
+            // fill in the query Object Field names
             for (i = 0; i < procFld; i++) {
                 HeapTuple tuple = tuptable->vals[i];
+                // skip the four additional columns added during initialization
                 if (strcmp(SPI_getvalue(tuple, tupdesc, 1), "lp_id") == 0) continue;
                 if (strcmp(SPI_getvalue(tuple, tupdesc, 1), "ncomplete") == 0) continue;
-                if (strcmp(SPI_getvalue(tuple, tupdesc, 1), "alphavalue") == 0) {
-                    strcat(getOutFields, "alphavalue as distance from ");
-                    strcat(getOutFields, tbl);
-                    strcat(getOutFields, " LIMIT 1;");
-                    continue;
-                }
+                if (strcmp(SPI_getvalue(tuple, tupdesc, 1), "alphavalue") == 0) continue;
                 if (strcmp(SPI_getvalue(tuple, tupdesc, 1), "ibitmap") == 0) continue;
                 strcpy(qObj[i].fieldName, SPI_getvalue(tuple, tupdesc, 1));
-                strcat(getOutFields, qObj[i].fieldName);
-                strcat(getOutFields, ", ");
             }
+
+            // fill in the query Object values
             for (i = 0; i < dim; i++) {
                 for (j = 0; j < nQueryFields; j++) {
                     if (strcmp(qFnames[j], qObj[i].fieldName) == 0) {
@@ -378,7 +377,8 @@ iknnLP(PG_FUNCTION_ARGS) {
         else {
             // error handle
         }
-    
+   
+    // start query scanning 
         // construct bucket fetching command
         strcpy(getBuckets, "SELECT bucketid FROM ");
         strcat(getBuckets, tbl);
@@ -387,7 +387,7 @@ iknnLP(PG_FUNCTION_ARGS) {
         ret = SPI_exec(getBuckets, 4294967296); 
         // save the number of rows
         procBkt = SPI_processed;
-        // If some rows were fetched, print them via elog(INFO).
+
         if (ret > 0 && SPI_tuptable != NULL) {
             TupleDesc tupdescBkt = SPI_tuptable->tupdesc;
             SPITupleTable *tuptableBkt = SPI_tuptable;
@@ -426,14 +426,15 @@ iknnLP(PG_FUNCTION_ARGS) {
                     TupleDesc tupdescObj = SPI_tuptable->tupdesc;
                     SPITupleTable *tuptableObj = SPI_tuptable;
    
-                    tupdescHeap = tupdescObj; 
                     qAlpha /= Iseto;
                     pPrev = binarySearch(&tupdescObj, tuptableObj, procObj, qAlpha, dim);
                     pNext = pPrev + 1;
+                
+                    // scan left with alpha pruning
                     for (;pPrev > 0; pPrev--) {
                         if (res.length < K) {
                             double dist;
-                            dist = calcDist(&tupdescObj, tuptableObj, pPrev, qObj, dim, Iseto, bitmap, -1);
+                            dist = calcDist(&tupdescObj, tuptableObj, pPrev, qObj, dim, Iseto, bitmap, -1); // -1 means no partial distance pruning
                             heapInsert(&res, dist, tuptableObj, pPrev, &tupdescObj, bitmap);
                             if (res.length == K) {
                                 Ua = qAlpha + res.rec[1].dist / dim;
@@ -454,6 +455,7 @@ iknnLP(PG_FUNCTION_ARGS) {
                                 break;
                         }
                     }
+                    // scan right with alpha pruning
                     for (;pNext < procObj; pNext++) {
                         if (res.length < K) {
                             double dist;
@@ -465,7 +467,7 @@ iknnLP(PG_FUNCTION_ARGS) {
                             }
                         }
                         else {
-                            if (La < string2double(SPI_getvalue(tuptableObj->vals[pNext], tupdescObj, dim + 2))) {
+                            if (Ua > string2double(SPI_getvalue(tuptableObj->vals[pNext], tupdescObj, dim + 2))) {
                                 double dist;
                                 dist = calcDist(&tupdescObj, tuptableObj, pNext, qObj, dim, Iseto, bitmap, res.rec[1].dist);
                                 if (dist >= 0) {
@@ -486,14 +488,15 @@ iknnLP(PG_FUNCTION_ARGS) {
         }
         
         // get tuple descriptor for output
-        ret = SPI_exec(getOutFields, 1);
-        tupdescOut = SPI_tuptable->tupdesc;
+        if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+            ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("function returning record called in context "
+                            "that cannot accept type record")));
 
-        SPI_finish(); //pfree(command);
+        SPI_finish();
 
-        /* total number of tuples to be returned */
+        // total number of tuples to be returned
         funcctx->max_calls = res.length;
-        attinmeta = TupleDescGetAttInMetadata(tupdescOut);
+        attinmeta = TupleDescGetAttInMetadata(tupdesc);
         funcctx->attinmeta = attinmeta;
 
         // restore memory context
@@ -514,19 +517,18 @@ iknnLP(PG_FUNCTION_ARGS) {
         values = (char**)palloc((dim + 1) * sizeof(char*));
         for (i = 0; i < dim; i++) {
             values[i] = (char*)palloc(32 * sizeof(char));
-            snprintf(values[i], 32, "%d", res.rec[call_cntr + 1].vals[i]);
+            if (res.rec[call_cntr + 1].isnull[i] == '1')
+                snprintf(values[i], 32, "%d", res.rec[call_cntr + 1].vals[i]);
+            else
+                values[i] = NULL;
         }
         values[dim] = (char*)palloc(32 * sizeof(char));
         snprintf(values[dim], 32, "%lf", res.rec[call_cntr + 1].dist);
 
-        /* build a tuple */
+        // build a tuple
         tuple = BuildTupleFromCStrings(attinmeta, values);
-        /* make the tuple into a datum */
+        // make the tuple into a datum
         result = HeapTupleGetDatum(tuple);
-
-        for (i = 0; i <= dim; i++)
-            pfree(values[i]);
-        pfree(values);
 
         SRF_RETURN_NEXT(funcctx, result);
     }
