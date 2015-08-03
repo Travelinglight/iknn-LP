@@ -1,4 +1,4 @@
-CREATE FUNCTION LPwithdraw(tb text) RETURNS void
+CREATE OR REPLACE FUNCTION LPwithdraw(tb text) RETURNS void
 AS $T1$
 DECLARE
     rec record;
@@ -19,16 +19,13 @@ BEGIN
     EXECUTE format('DROP TABLE %s;', tb || '_LATMP');
 
 --  drop triggers
-    EXECUTE format('DROP TRIGGER %s_lainup ON %s;', tb, tb);
-    EXECUTE format('DROP FUNCTION lp_%s_triinup();', tb);
+    EXECUTE format('DROP TRIGGER %s_lains ON %s', tb, tb);
+    EXECUTE format('DROP FUNCTION lp_%s_triins()', tb);
     EXECUTE format('DROP TRIGGER %s_ladel ON %s', tb, tb);
-    EXECUTE format('DROP FUNCTION lp_%s_tridel();', tb);
+    EXECUTE format('DROP FUNCTION lp_%s_tridel()', tb);
+    EXECUTE format('DROP TRIGGER %s_laupd ON %s', tb, tb);
+    EXECUTE format('DROP FUNCTION lp_%s_triupd()', tb);
 
---  drop function (for debugging)
-    EXECUTE 'DROP FUNCTION lpinit(text);';
-
---  drop extension (for debugging)
-    DROP EXTENSION hstore;
 END
 $T1$
 language plpgsql;

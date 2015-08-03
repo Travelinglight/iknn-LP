@@ -105,7 +105,7 @@ BEGIN
 
 -- create trigger for insertion/updating
 EXECUTE format('
-CREATE FUNCTION LP_%s_triInUp() RETURNS TRIGGER 
+CREATE OR REPLACE FUNCTION LP_%s_triins() RETURNS TRIGGER 
 AS $T2$
 DECLARE
     r record;
@@ -166,15 +166,15 @@ BEGIN
     EXECUTE bktinsk || bktinsv;
 
 -- update lattice table
-    EXECUTE format(''INSERT INTO %s_latmp SELECT %%s, %%s WHERE NOT EXISTS ( SELECT * FROM %s_latmp WHERE latticeid = %%s and bucketid = %%s);'', nin, quote_nullable(bit), nin, quote_nullable(bit));
+    EXECUTE format(''INSERT INTO %s_latmp SELECT %%s, %%s WHERE NOT EXISTS ( SELECT * FROM %s_latmp WHERE latticeid = %%s and bucketid = %%s);'', nco, quote_nullable(bit), nco, quote_nullable(bit));
     RETURN NEW;
 END
 $T2$ LANGUAGE plpgsql;', tb, bktcol, tb,  tb, tb, tb, tb, tb, tb, tb, tb);
-EXECUTE format('CREATE TRIGGER %s_LAinup BEFORE INSERT OR UPDATE ON %s
-FOR EACH ROW EXECUTE PROCEDURE LP_%s_triInUp();', tb, tb, tb);
+EXECUTE format('CREATE TRIGGER %s_LAins BEFORE INSERT ON %s
+FOR EACH ROW EXECUTE PROCEDURE LP_%s_triins();', tb, tb, tb);
 
 EXECUTE format('
-CREATE FUNCTION LP_%s_tridel() RETURNS TRIGGER
+CREATE OR REPLACE FUNCTION LP_%s_tridel() RETURNS TRIGGER
 AS $T1$
 DECLARE nexist int;
 BEGIN
@@ -190,6 +190,88 @@ $T1$ LANGUAGE plpgsql;', tb, tb, tb, tb, tb);
 
 EXECUTE format(' CREATE TRIGGER %s_LAdel AFTER DELETE ON %s
 FOR EACH ROW EXECUTE PROCEDURE LP_%s_tridel();', tb, tb, tb);
+
+EXECUTE format('
+    CREATE OR REPLACE FUNCTION LP_%s_triupd() RETURNS TRIGGER 
+    AS $T2$
+    DECLARE
+        r record;
+        ext int;
+        nin int := 0;
+        nco int := 0;
+        alp float := 0;
+        bit text := '''';
+        vals text := '''';
+        bktinsk text := '''';
+        bktinsv text := '''';
+    BEGIN
+    -- compute the three additional attributes
+        FOR r IN SELECT (each(hstore(NEW))).*
+        LOOP
+            IF r.key = ''lp_id'' THEN CONTINUE; END IF;
+            IF r.key = ''alphavalue'' THEN CONTINUE; END IF;
+            IF r.key = ''ncomplete'' THEN CONTINUE; END IF;
+            IF r.key = ''ibitmap'' THEN CONTINUE; END IF;
+            IF r.value is null THEN
+                nin := nin + 1;
+                bit := bit || ''0'';
+            ELSE
+                nco := nco + 1;
+                alp := alp + r.value::int;
+                bit := bit || ''1'';
+            END IF;
+        END LOOP;
+        alp := alp / nco;
+        NEW.ncomplete := nco;
+        NEW.alphavalue := alp;
+        NEW.ibitmap := bit;
+    
+        EXECUTE format(''DELETE FROM lp_%s_%%s WHERE lp_id = %%s'', OLD.ibitmap, OLD.lp_id);
+        EXECUTE format(''SELECT count(*) FROM %s WHERE ncomplete = %%s and ibitmap = %%s'', OLD.ncomplete::text, quote_nullable(OLD.ibitmap)) INTO ext;
+        IF ext = 0 THEN
+            EXECUTE format(''DELETE FROM %s_latmp WHERE latticeid = %%s and bucketid = %%s;'', OLD.ncomplete::text, quote_nullable(OLD.ibitmap));
+            EXECUTE format(''DROP TABLE lp_%s_%%s;'', OLD.ibitmap);
+        END IF;
+
+         -- create bucket if not exists
+        EXECUTE format(''CREATE TABLE IF NOT EXISTS %%s(%s);'', ''lp_%s_'' || NEW.ibitmap);
+    
+        -- create btree index on bucket 
+        EXECUTE format(''SELECT count(*) FROM pg_indexes WHERE tablename = %%s and indexname = %%s;'', quote_nullable(''lp_%s_'' || NEW.ibitmap), quote_nullable(''sort_%s_'' || NEW.ibitmap)) INTO ext;
+        IF ext = 0 THEN
+            EXECUTE format(''CREATE INDEX %%s ON %%s USING BTREE (alphavalue);'', ''sort_%s_'' || NEW.ibitmap, ''lp_%s_'' || NEW.ibitmap);
+        END IF;
+    
+        -- insert into bucket
+        FOR r IN SELECT (each(hstore(NEW))).*
+        LOOP
+            IF r.key = ''ibitmap'' THEN CONTINUE; END IF;
+            IF r.key = ''ncomplete'' THEN CONTINUE; END IF;
+            IF r.value is null THEN
+            ELSE
+                IF bktinsk = '''' THEN
+                    bktinsk = format(''INSERT INTO %%s(%%s'', ''lp_%s_'' || NEW.ibitmap, r.key);
+                    bktinsv = format(''VALUES(%%s'', r.value::text);
+                ELSE
+                    bktinsk := bktinsk || '', '' || r.key;
+                    bktinsv := bktinsv || '', '' || r.value::text;
+                END IF;
+            END IF;
+        END LOOP;
+        bktinsk := bktinsk || '')'';
+        bktinsv := bktinsv || '')'';
+        EXECUTE bktinsk || bktinsv;
+    
+        -- update lattice table
+        EXECUTE format(''INSERT INTO %s_latmp SELECT %%s, %%s WHERE NOT EXISTS ( SELECT * FROM %s_latmp WHERE latticeid = %%s and bucketid = %%s);'', nco, quote_nullable(bit), nco, quote_nullable(bit));
+    
+        RETURN NEW;
+    END
+    $T2$ LANGUAGE plpgsql;', tb, tb, tb, tb, tb, bktcol, tb, tb, tb, tb, tb, tb, tb, tb);
+
+    EXECUTE format('
+    CREATE TRIGGER %s_LAupd AFTER UPDATE ON %s
+    FOR EACH ROW EXECUTE PROCEDURE LP_%s_triupd();', tb, tb, tb);
 
 END
 $$
