@@ -90,7 +90,6 @@ void string2int(char *number, int *K) {
 // chop query field names into a string array
 void chopQueryFieldNames(char *fieldNames, char **qFnames) {
     int i, j;
-ereport(INFO, (errmsg("fieldNames:%s", fieldNames)));
     i = 0;
     while ((fieldNames != NULL) && (strlen(fieldNames) > 0)) {
         for (j = 0; j < strlen(fieldNames); j++) {
