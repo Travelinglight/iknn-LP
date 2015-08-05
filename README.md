@@ -23,14 +23,14 @@ incomplete k nearest neighbor query in postgresql using LP algorithm
 ## How to use?
 ### 1. Clone and enter my repo (in terminal)
 ~~~terminal
-    git clone git@github.com:Travelinglight/iknn.git
+    git clone git@github.com:Travelinglight/iknn-LP.git
     cd iknn
 ~~~
 
 ### 2. Import LPinit.sql (in postgresql)
 
 ~~~sql
-    \i pgsql/LAinit.sql
+    \i pgsql/LPinit.sql
 ~~~
 
 ### 3. Initialize a target table to support iknn query
