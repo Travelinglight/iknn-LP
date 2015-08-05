@@ -1,5 +1,5 @@
-# iknn
-incomplete k nearest neighbor query in postgresql
+# iknn-LP
+incomplete k nearest neighbor query in postgresql using LP algorithm
 
 ## Algorithm Discription
 ### LP algorithm:
