@@ -24,7 +24,7 @@ incomplete k nearest neighbor query in postgresql using LP algorithm
 ### 1. Clone and enter my repo (in terminal)
 ~~~terminal
     git clone git@github.com:Travelinglight/iknn-LP.git
-    cd iknn
+    cd iknn-LP
 ~~~
 
 ### 2. Import LPinit.sql (in postgresql)
@@ -55,7 +55,8 @@ The lpinit function automatically does these things:
   4. build up hash index on latticeid of the tmp table, to speed up query for buckets;
   5. create table for each bitmap, representing buckets, with the name lp\_[table name]\_[bitmap].
   6. build up b-tree index on lp\_[table name]\_[bitmap] at column alphavalue, to auto-sort the tuples with alphavalue
-  7. set triggers to maintain the three columns and the extra tables on insert, update and delete.
+  7. Insert all the existing objects into the corresponding bucket.
+  8. set triggers to maintain the three columns and the extra tables on insert, update and delete.
 
 ### 4. Make and install iknnLP function (in terminal)
 ~~~terminal
@@ -99,7 +100,7 @@ The lpinit function automatically does these things:
 This function automatically does these things:
   1. drop the extra three columns of the original table;
   2. drop all tmp tables;
-  3. drop the two triggers that maintains the three columns and the tmp table;
+  3. drop the three triggers that maintains the three extra columns, buckets, and the tmp table;
   4. drop the lpinit function
 
 ## Q&A
