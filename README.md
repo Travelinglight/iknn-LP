@@ -3,16 +3,16 @@ incomplete k nearest neighbor query in postgresql using LP algorithm
 
 ## Algorithm Discription
 ### LP algorithm:
-  Please see Mr. Gao's paper: <i><b>IkNN-TFS-Yunjun Gao-20150115</b></i>
+  Please refer to Dr. Gao's paper: ***IkNN-TFS-Yunjun Gao-20150115***
 ### Initialization:
-  1. Set an extra table to record lattice-bucket relations. Each Lattice is identified by ncomplete, the number of completed fields of all the objects in it. Each bucket is identified by a bitmap, representing the incomplete state of objects in it. e.g. '1010' represents the 2nd and 4th field of the object is incomplete.
+  1. Set up an extra table to record lattice-bucket relations. Each Lattice is identified by `ncomplete`, the number of completed fields of all the objects in it. Each bucket is identified by a bitmap, representing the incomplete state of objects in it. e.g. '1010' represents the 2nd and 4th field of the object is incomplete.
   2. Categorize all objects into buckets. Build a table for each bucket, storing the whole tuple and an extra column for alphavalue. A BTREE index is built on each bucket at the column alphavalue.
 
 ### Query
-  1. Fetch all bitmaps from lattice-bucket table, order by latticeid (ncomplete);
-  2. For each bitmap, fetch all tuples in the corresponding buckets, order by alphavalue. Notice that a BTREE index has been built at the column alphavalue, postgres fetches tuple directly from Btree and doesn't need to sort them. The order by clause thus does not cause extra complexity;
-  3. Calculate the qAlpha according to the bitmap, and binary search its position in the fetched tuples;
-  4. Search forward and backward with alpha value pruning and partial distance pruning (mentioned in the paper), while maintain a max-heap as the candidate set;
+  1. Fetch all bitmaps from lattice-bucket table, ordering them by latticeid (`ncomplete`);
+  2. For each bitmap, fetch all tuples in the corresponding buckets, ordering them by alphavalue. Notice that a BTREE index has been built at the column alphavalue, postgres fetches tuples directly from Btree and doesn't need to sort them. The `order by` clause thus does not cause extra complexity;
+  3. Calculate the qAlpha according to the bitmap, and binary-search its position in the fetched tuples;
+  4. Search forward and backward with alpha value pruning and partial distance pruning (mentioned in the paper), while maintaining a max-heap as the candidate set;
   5. return all the tuples remained in the candidate set.
 
 ## Testing Environment
@@ -21,7 +21,7 @@ incomplete k nearest neighbor query in postgresql using LP algorithm
   3. PostgreSQL version: PostgreSQL 9.4
 
 ## How to use?
-### 0. Install postgresql-server-dev fist
+### 0. Install postgresql-server-dev first
 ~~~terminal
 	sudo apt-get install postgreslq-server-dev-all
 ~~~
@@ -55,11 +55,11 @@ The lpinit function automatically does these things:
 
   1. create a tmp table as lattices. The name of tmp table is [table name]_latmp;
   2. add four columns to the original table: lp_id, alphavalue, nincomplete and ibitmap, recording the unique id for lp algorithm, alpha value of the entry, the number of incomplete values and the bitmap of completeness respectively;
-  3. build up hash index on ibitmap, that is for buckets deletion;
+  3. build up hash index on ibitmap, which is for buckets deletion;
   4. build up hash index on latticeid of the tmp table, to speed up query for buckets;
-  5. create table for each bitmap, representing buckets, with the name lp\_[table name]\_[bitmap].
+  5. create a table for each bitmap, representing buckets, with the name lp\_[table name]\_[bitmap].
   6. build up b-tree index on lp\_[table name]\_[bitmap] at column alphavalue, to auto-sort the tuples with alphavalue
-  7. Insert all the existing objects into the corresponding bucket.
+  7. Insert all the existing objects into the corresponding buckets.
   8. set triggers to maintain the three columns and the extra tables on insert, update and delete.
 
 ### 4. Make and install iknnLP function (in terminal)
@@ -86,7 +86,12 @@ The lpinit function automatically does these things:
 
 ### 7. Here's the result
 ~~~sql
- a | b  | c | d  | distance ---+----+---+----+----------   |    |   | 46 |      576   |    |   | 23 |      484   | 17 |   | 35 |      452(3 rows)
+ a | b  | c | d  | distance 
+---+----+---+----+----------
+   |    |   | 46 |      576
+   |    |   | 23 |      484
+   | 17 |   | 35 |      452
+(3 rows)
 ~~~
 
 ### 8. Inport LPwithdraw.sql
@@ -104,7 +109,7 @@ The lpinit function automatically does these things:
 This function automatically does these things:
   1. drop the extra three columns of the original table;
   2. drop all tmp tables;
-  3. drop the three triggers that maintains the three extra columns, buckets, and the tmp table;
+  3. drop the three triggers that maintain the three extra columns, buckets, and the tmp table;
   4. drop the lpinit function
 
 ## Q&A
@@ -125,8 +130,8 @@ This function automatically does these things:
   In the withdraw function I dropped the lpinit function. this is convenient for me because this project is not yet finished and I need to update lpinit function frequently. All you have to do is to re-import the LPinit module.
 
 ### To-do List
-1. to support float as data type
+1. Support `float` as data type
 
 ## Contact us
-1. You can get the paper from Mr. Gao: gaoyj@zju.edu.cn
+1. You can get the paper from Dr. Gao: gaoyj@zju.edu.cn
 2. The projet is coded by Kingston Chen, feel free to ask any questions: holaelmundokingston@gmail.com
