@@ -6,7 +6,7 @@ Incomplete k-nearest neighbor query in postgresql using LP algorithm
   Please refer to Dr. Gao's paper: ***IkNN-TFS-Yunjun Gao-20150115***
 ### Initialization:
   1. Set up an extra table to record lattice-bucket relations. Each Lattice is identified by `ncomplete`, the number of completed fields of all the objects in it. Each bucket is identified by a bitmap, representing the incomplete state of objects in it. e.g. '1010' represents the 2nd and 4th field of the object is incomplete.
-  2. Categorize all objects into buckets. Build a table for each bucket, storing the whole tuple and an extra column for alphavalue. A BTREE index is built on each bucket at the column of alphavalue.
+  2. Categorize all objects into buckets. Build a table for each bucket, storing the whole tuple and an extra column for `alphavalue`. A BTREE index is built on each bucket at the column `alphavalue`.
 
 ### Query
   1. Fetch all bitmaps from lattice-bucket table, ordering them by latticeid (`ncomplete`);
